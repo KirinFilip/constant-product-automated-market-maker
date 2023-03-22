@@ -12,15 +12,18 @@ contract ConstantProductAmm {
     /// @notice ERC20 token1 of the pair
     IERC20 public immutable token1;
 
-    /// @notice internal balance of token0
+    /// @notice Internal balance of token0
     uint256 public reserve0;
-    /// @notice internal balance of token1
+    /// @notice Internal balance of token1
     uint256 public reserve1;
 
-    /// @notice total shares (for liquidity)
+    /// @notice Total shares (for liquidity)
     uint256 public totalSupply;
-    /// @notice number of shares per user (for liquidity)
+    /// @notice Number of shares per user (for liquidity)
     mapping(address => uint256) public balanceOf;
+
+    // @notice Protection from making one share too expensive
+    uint256 public constant MINIMUM_LIQUIDITY = 1e3;
 
     /// @notice Initialize the contract with a pair of token addresses
     constructor(address _token0, address _token1) {
@@ -64,7 +67,6 @@ contract ConstantProductAmm {
         );
         require(_amountIn > 0, "amountIn = 0");
 
-        
         // Check if tokenIn is token0 or token1
         bool isToken0 = _tokenIn == address(token0);
         (
@@ -98,7 +100,7 @@ contract ConstantProductAmm {
     /// @param _amount0 amount of the first token to add to the pool
     /// @param _amount1 amount of the second token to add to the pool
     /// @return shares amount of shares given to the liquidity provider
-    function addLiquidty(
+    function addLiquidity(
         uint256 _amount0,
         uint256 _amount1
     ) external returns (uint256 shares) {
@@ -117,39 +119,45 @@ contract ConstantProductAmm {
         // Mint shares
         // value of liqudity = sqrt(x*y)
         // s = dx / x * T = dy / y * T
-        if(totalSupply == 0) {
-            shares = _sqrt(_amount0 * _amount1);
+        if (totalSupply == 0) {
+            shares = _sqrt(_amount0 * _amount1) - MINIMUM_LIQUIDITY;
+            _mint(address(0), MINIMUM_LIQUIDITY);
         } else {
             shares = _min(
-                (_amount0 * totalSupply) / reserve0, 
+                (_amount0 * totalSupply) / reserve0,
                 (_amount1 * totalSupply) / reserve1
-                );
+            );
         }
         require(shares > 0, "shares = 0");
         // Mint the shares to the msg.sender
         _mint(msg.sender, shares);
         // Update reserves
-        _update(token0.balanceOf(address(this)), token1.balanceOf(address(this)));
+        _update(
+            token0.balanceOf(address(this)),
+            token1.balanceOf(address(this))
+        );
     }
 
     /// @notice Remove liquidity from the pool by providing '_shares' and get back tokens
     /// @param _shares give amount of shares in exchange for token0 and token1
     /// @return amount0 amount of token0 transferred to msg.sender
     /// @return amount1 amount of token1 transferred to msg.sender
-    function removeLiquidity(uint256 _shares) external returns(uint256 amount0, uint256 amount1) {
+    function removeLiquidity(
+        uint256 _shares
+    ) external returns (uint256 amount0, uint256 amount1) {
         // Calculate amount0 and amount1 to withdraw
         // dx = s / T * x
         // dy = s / T * y
         uint256 balance0 = token0.balanceOf(address(this));
         uint256 balance1 = token1.balanceOf(address(this));
 
-        amount0 = _shares * balance0 / totalSupply;
-        amount1 = _shares * balance1 / totalSupply;
+        amount0 = (_shares * balance0) / totalSupply;
+        amount1 = (_shares * balance1) / totalSupply;
         require(amount0 > 0 && amount1 > 0, "amount0 or amount1 = 0");
-        
+
         // Burn shares
         _burn(msg.sender, _shares);
-        
+
         // Update reserves
         _update(balance0 - amount0, balance1 - amount1);
 
@@ -159,16 +167,17 @@ contract ConstantProductAmm {
     }
 
     /// @notice Calculate the square root of a number
-    function _sqrt(uint y) private pure returns(uint z) {
-        if(y > 3) {
+    /// @dev from UniswapV2
+    function _sqrt(uint y) internal pure returns (uint z) {
+        if (y > 3) {
             z = y;
             uint x = y / 2 + 1;
             while (x < z) {
                 z = x;
                 x = (y / x + x) / 2;
-            } else if (y != 0) {
-                z = 1;
             }
+        } else if (y != 0) {
+            z = 1;
         }
     }
 
