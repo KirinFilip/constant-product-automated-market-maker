@@ -23,7 +23,7 @@ contract ConstantProductAmm {
     mapping(address => uint256) public balanceOf;
 
     // @notice Protection from making one share too expensive
-    uint256 public constant MINIMUM_LIQUIDITY = 1e3;
+    uint256 private constant MINIMUM_LIQUIDITY = 1e3;
 
     /// @notice Initialize the contract with a pair of token addresses
     constructor(address _token0, address _token1) {
@@ -153,7 +153,8 @@ contract ConstantProductAmm {
 
         amount0 = (_shares * balance0) / totalSupply;
         amount1 = (_shares * balance1) / totalSupply;
-        require(amount0 > 0 && amount1 > 0, "amount0 or amount1 = 0");
+        require(amount0 > 0, "amount0 = 0");
+        require(amount1 > 0, "amount1 = 0");
 
         // Burn shares
         _burn(msg.sender, _shares);
